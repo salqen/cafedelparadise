@@ -4279,6 +4279,7 @@ return (
 Cafe Paradise
 </div>
 <div style={{fontSize:8.5,color:MV.neon2,letterSpacing:".24em",textTransform:"uppercase",fontWeight:700}}>Service Manager</div>
+<div style={{fontSize:8,color:MV.dim,marginTop:2,display:"flex",alignItems:"center",gap:3,whiteSpace:"nowrap"}}>powered by <b style={{background:`linear-gradient(90deg,${MV.neon},${MV.violet})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontWeight:800}}>⚡ MediaVolt</b></div>
 </div>
 <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
 {alerts>0&&<div style={{background:"rgba(192,57,43,.92)",color:"#fff",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700}}>⚠️ {alerts}</div>}
@@ -4293,10 +4294,6 @@ Cafe Paradise
 <button onClick={signOut} title="Odhlásiť sa" style={{background:"transparent",border:`1px solid ${MV.line}`,color:MV.neon2,borderRadius:8,padding:"6px 8px",fontSize:13,cursor:"pointer",lineHeight:1}}>⏻</button>
 </div>
 </div>
-<div style={{background:MV.panel,color:MV.dim,padding:"5px 16px",fontSize:10.5,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,borderBottom:`1px solid ${MV.line}`}}>
-<span style={{color:MV.neon2}}>🗓 Plánované otvorenie: 1. – 15. júna 2026</span>
-<span style={{display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}>powered by <b style={{background:`linear-gradient(90deg,${MV.neon},${MV.violet})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontWeight:800,letterSpacing:".02em"}}>⚡ MediaVolt</b></span>
-</div>
 {/* Blok navigácie — skupiny */}
 <div style={{background:MV.panel2,display:"flex",gap:0,position:"sticky",top:48,zIndex:19,overflowX:"auto",borderBottom:`1px solid ${MV.line}`}}>
 {visibleGroups.map(g=>(
@@ -4307,4 +4304,42 @@ background:activeGroup===g.group?"rgba(255,106,0,.14)":"none",color:activeGroup=
 </button>
 ))}
 </div>
-{/* Tabs v rámci zvolenej skupiny */
+{/* Tabs v rámci zvolenej skupiny */}
+<div style={{background:"#fff",borderBottom:"1px solid #ECE3D7",display:"flex",position:"sticky",top:78,zIndex:18,overflowX:"auto"}}>
+{currentGroupTabs.map(t=>(
+<button key={t.id} onClick={()=>setTab(t.id)}
+style={{flex:"0 0 auto",minWidth:58,padding:"8px 10px",border:"none",borderBottom:tab===t.id?`2.5px solid ${BRAND.caramel}`:"2.5px solid transparent",background:tab===t.id?"rgba(255,106,0,.07)":"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,transition:"all .15s"}}>
+<span style={{fontSize:15,filter:tab===t.id?"none":"grayscale(.35) opacity(.85)"}}>{t.icon}</span>
+<span style={{fontSize:9,fontWeight:tab===t.id?700:500,color:tab===t.id?BRAND.caramel:"#A08C7C",whiteSpace:"nowrap"}}>{t.label}</span>
+</button>
+))}
+</div>
+{readOnly&&(
+<div style={{background:"#FEF3C7",color:"#8B6F00",fontSize:11,fontWeight:700,padding:"6px 16px",textAlign:"center",borderBottom:"1px solid #F3E3B0"}}>
+👁 Len na čítanie — túto sekciu nemôžeš upravovať.
+</div>
+)}
+<div style={readOnly?{pointerEvents:"none",userSelect:"none"}:undefined}>
+{tab==="plan"     && <PlanTab/>}
+{tab==="brand"    && <BrandingTab/>}
+{tab==="menu"     && <MenuTab/>}
+{tab==="finance"  && <FinanceTab/>}
+{tab==="pokladna" && <PokladnaTab company={company} sales={sales} setSales={setSales}/>}
+{tab==="dodav"    && <DodavateliaTab inventory={inventory} setInventory={setInventory}/>}
+{tab==="objednavky" && <OrderTab inventory={inventory}/>}
+{tab==="zavozy" && <ZavozyTab/>}
+{tab==="recepty" && <RecipesTab inventory={inventory} recipes={recipes} setRecipes={setRecipes}/>}
+{tab==="odpad" && <WasteTab inventory={inventory} setInventory={setInventory} wasteLog={wasteLog} setWasteLog={setWasteLog}/>}
+{tab==="sklad" && <StockTab inventory={inventory} setInventory={setInventory}/>}
+{tab==="zamestnanci" && <EmployeesTab employees={employees} setEmployees={setEmployees} company={company} setCompany={setCompany} venue={venue}/>}
+{tab==="zmeny" && <ShiftsTab employees={employees} setEmployees={setEmployees}/>}
+{tab==="firma" && <FirmaTab company={company} setCompany={setCompany}/>}
+{tab==="provadzka" && <VenueTab venue={venue} setVenue={setVenue}/>}
+{tab==="equipment" && <EquipmentTab/>}
+{tab==="eshop"    && <EshopTab/>}
+{tab==="kalendar" && <CalendarTab/>}
+{tab==="users"    && <UsersAdminTab/>}
+</div>
+</div>
+);
+}
