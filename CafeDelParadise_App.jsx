@@ -476,12 +476,39 @@ return (
 </div>
 );
 }
-function MeetingCalendar() {
+const SK_MONTHS_IDX={januar:0,februar:1,marec:2,april:3,maj:4,jun:5,jul:6,august:7,september:8,oktober:9,november:10,december:11};
+function skMonthIdx(w){ if(!w) return null; const n=w.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,""); return (n in SK_MONTHS_IDX)?SK_MONTHS_IDX[n]:null; }
+function dkOfDate(dt){ return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; }
+function parsePlanRange(str){
+if(!str) return null;
+const parts=String(str).split(/[–—-]/);
+const side=s=>{ if(!s) return {}; const dm=s.match(/(\d{1,2})\s*\./)||s.match(/\b(\d{1,2})\b/); const ym=s.match(/\b(\d{4})\b/); let month=null; for(const w of s.split(/[\s.]+/)){ const mi=skMonthIdx(w); if(mi!=null){ month=mi; break; } } return { day:dm?parseInt(dm[1],10):null, month, year:ym?parseInt(ym[1],10):null }; };
+const L=side(parts[0]); const R=parts.length>1?side(parts[1]):L;
+const year=L.year??R.year; const lMonth=L.month??R.month;
+if(L.day==null||lMonth==null||year==null) return null;
+const start=new Date(year,lMonth,L.day);
+const end=new Date(R.year??year, R.month??lMonth, R.day??L.day);
+return { start, end };
+}
+function planEventsFrom(cols){
+const out=[];
+(cols||[]).forEach(c=>{
+const r=parsePlanRange(c.dates);
+if(!r) return;
+const sk=dkOfDate(r.start), ek=dkOfDate(r.end);
+out.push({ id:"plan-"+c.id+"-s", date:sk, title:c.title, place:"Začiatok fázy", note:"", time:"", fromPlan:true, color:c.color||MV.neon });
+if(ek!==sk) out.push({ id:"plan-"+c.id+"-e", date:ek, title:c.title, place:"Koniec fázy", note:"", time:"", fromPlan:true, color:c.color||MV.neon });
+});
+return out;
+}
+function CalendarTab() {
 const MONTHS=["Január","Február","Marec","Apríl","Máj","Jún","Júl","August","September","Október","November","December"];
 const DOW=["Po","Ut","St","Št","Pi","So","Ne"];
 const today=new Date();
 const todayKey=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
-const [meetings,setMeetings]=usePersistentState("cp_meetings",[]);
+const [events,setEvents]=usePersistentState("cp_meetings",[]);
+const planEvents=planEventsFrom(getCached("cp_planCols",COLS0));
+const all=[...events.map(e=>({...e,fromPlan:false})),...planEvents];
 const [view,setView]=useState({y:today.getFullYear(),m:today.getMonth()});
 const [sel,setSel]=useState(null);
 const [form,setForm]=useState({time:"",title:"",place:"",note:""});
@@ -491,14 +518,14 @@ const lead=(new Date(view.y,view.m,1).getDay()+6)%7; // pondelok-prvý
 const cells=[...Array(lead).fill(null),...Array.from({length:daysIn},(_,i)=>i+1)];
 const prevM=()=>setView(v=>{const d=new Date(v.y,v.m-1,1);return{y:d.getFullYear(),m:d.getMonth()};});
 const nextM=()=>setView(v=>{const d=new Date(v.y,v.m+1,1);return{y:d.getFullYear(),m:d.getMonth()};});
-const byDay=meetings.reduce((a,m)=>{(a[m.date]=a[m.date]||[]).push(m);return a;},{});
-const addMeeting=()=>{
+const byDay=all.reduce((a,m)=>{(a[m.date]=a[m.date]||[]).push(m);return a;},{});
+const addEvent=()=>{
 if(!sel||!form.title.trim())return;
-setMeetings(ms=>[...ms,{id:Date.now()+"-"+Math.random().toString(36).slice(2,6),date:sel,...form,title:form.title.trim()}]);
+setEvents(ms=>[...ms,{id:Date.now()+"-"+Math.random().toString(36).slice(2,6),date:sel,...form,title:form.title.trim()}]);
 setForm({time:"",title:"",place:"",note:""});
 };
-const rem=id=>setMeetings(ms=>ms.filter(m=>m.id!==id));
-const upcoming=[...meetings].sort((a,b)=>(a.date+("T"+(a.time||"99"))).localeCompare(b.date+("T"+(b.time||"99")))).filter(m=>m.date>=todayKey);
+const rem=id=>setEvents(ms=>ms.filter(m=>m.id!==id));
+const upcoming=[...all].sort((a,b)=>(a.date+("T"+(a.time||"99"))).localeCompare(b.date+("T"+(b.time||"99")))).filter(m=>m.date>=todayKey);
 const selList=sel?[...(byDay[sel]||[])].sort((a,b)=>(a.time||"99").localeCompare(b.time||"99")):[];
 const labelDate=s=>{if(!s)return"";const[y,m,d]=s.split("-").map(Number);return `${d}. ${MONTHS[m-1]} ${y}`;};
 const inp={padding:"8px 9px",borderRadius:7,border:"1px solid #E0D6C2",fontSize:12,background:"#fff",color:BRAND.espresso,outline:"none"};
@@ -507,8 +534,8 @@ return (
 <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:12}}>
 <div style={{width:26,height:26,borderRadius:7,background:`linear-gradient(135deg,${MV.neon},${MV.violet})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>📅</div>
 <div>
-<div style={{fontSize:14,fontWeight:800,color:BRAND.espresso}}>Kalendár stretnutí</div>
-<div style={{fontSize:9.5,color:BRAND.arabica,letterSpacing:".06em"}}>Plánuj stretnutia, porady a obhliadky</div>
+<div style={{fontSize:14,fontWeight:800,color:BRAND.espresso}}>Kalendár</div>
+<div style={{fontSize:9.5,color:BRAND.arabica,letterSpacing:".06em"}}>Udalosti a termíny z plánu na jednom mieste</div>
 </div>
 </div>
 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#fff",border:"1px solid #E8E0D0",borderRadius:10,padding:"8px 10px",marginBottom:8}}>
@@ -521,7 +548,10 @@ return (
 {cells.map((d,i)=>{
 if(d===null)return <div key={"e"+i}/>;
 const key=dk(view.y,view.m,d);
-const cnt=(byDay[key]||[]).length;
+const dayItems=byDay[key]||[];
+const cnt=dayItems.length;
+const hasUser=dayItems.some(x=>!x.fromPlan);
+const dotColor=hasUser?MV.neon:((dayItems[0]&&dayItems[0].color)||MV.neon2);
 const isToday=key===todayKey, isSel=key===sel;
 return (
 <button key={key} onClick={()=>setSel(isSel?null:key)}
@@ -530,8 +560,8 @@ border:isSel?`2px solid ${MV.neon}`:isToday?`1px solid ${MV.neon2}`:"1px solid #
 background:isSel?"rgba(255,106,0,.12)":cnt>0?"#FBF6EA":"#fff",
 display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,padding:2}}>
 <span style={{fontSize:12,fontWeight:isToday||isSel?800:500,color:isToday?MV.neon:BRAND.espresso}}>{d}</span>
-{cnt>0&&<span style={{position:"absolute",bottom:4,width:5,height:5,borderRadius:99,background:MV.neon}}/>}
-{cnt>1&&<span style={{position:"absolute",bottom:4,right:6,fontSize:8,fontWeight:700,color:MV.neon}}>{cnt}</span>}
+{cnt>0&&<span style={{position:"absolute",bottom:4,width:5,height:5,borderRadius:99,background:dotColor}}/>}
+{cnt>1&&<span style={{position:"absolute",bottom:4,right:6,fontSize:8,fontWeight:700,color:dotColor}}>{cnt}</span>}
 </button>
 );
 })}
@@ -542,47 +572,47 @@ display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center
 {selList.length>0&&(
 <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
 {selList.map(m=>(
-<div key={m.id} style={{display:"flex",alignItems:"center",gap:8,background:BRAND.latte,borderRadius:8,padding:"7px 9px"}}>
-<div style={{fontSize:11,fontWeight:800,color:MV.neon,minWidth:38}}>{m.time||"—"}</div>
+<div key={m.id} style={{display:"flex",alignItems:"center",gap:8,background:BRAND.latte,borderRadius:8,padding:"7px 9px",borderLeft:m.fromPlan?`3px solid ${m.color}`:"3px solid transparent"}}>
+<div style={{fontSize:m.fromPlan?9:11,fontWeight:800,color:m.fromPlan?m.color:MV.neon,minWidth:38}}>{m.fromPlan?"PLÁN":(m.time||"—")}</div>
 <div style={{flex:1}}>
 <div style={{fontSize:12,fontWeight:600,color:BRAND.espresso}}>{m.title}</div>
-{(m.place||m.note)&&<div style={{fontSize:10,color:"#A08060"}}>{[m.place&&("📍 "+m.place),m.note].filter(Boolean).join(" · ")}</div>}
+{(m.place||m.note)&&<div style={{fontSize:10,color:"#A08060"}}>{[m.place&&(m.fromPlan?m.place:("📍 "+m.place)),m.note].filter(Boolean).join(" · ")}</div>}
 </div>
-<button onClick={()=>rem(m.id)} style={{fontSize:11,color:"#C0B0A0",background:"none",border:"none",cursor:"pointer"}}>✕</button>
+{!m.fromPlan&&<button onClick={()=>rem(m.id)} style={{fontSize:11,color:"#C0B0A0",background:"none",border:"none",cursor:"pointer"}}>✕</button>}
 </div>
 ))}
 </div>
 )}
 <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:7,marginBottom:7}}>
 <input style={inp} type="time" value={form.time} onChange={e=>setForm(f=>({...f,time:e.target.value}))}/>
-<input style={inp} placeholder="Názov stretnutia" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))}/>
+<input style={inp} placeholder="Názov udalosti" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))}/>
 </div>
 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:8}}>
 <input style={inp} placeholder="Miesto" value={form.place} onChange={e=>setForm(f=>({...f,place:e.target.value}))}/>
 <input style={inp} placeholder="Poznámka" value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))}/>
 </div>
-<button onClick={addMeeting} disabled={!form.title.trim()}
+<button onClick={addEvent} disabled={!form.title.trim()}
 style={{width:"100%",padding:9,borderRadius:8,border:"none",fontWeight:700,fontSize:12,cursor:form.title.trim()?"pointer":"default",opacity:form.title.trim()?1:0.5,color:"#fff",background:`linear-gradient(135deg,${MV.neon},${MV.violet})`}}>
-＋ Pridať stretnutie
+＋ Pridať udalosť
 </button>
 </div>
 )}
 <div style={{marginTop:14}}>
-<div style={{fontSize:11,fontWeight:700,color:BRAND.arabica,textTransform:"uppercase",letterSpacing:".06em",marginBottom:7}}>Nadchádzajúce stretnutia</div>
+<div style={{fontSize:11,fontWeight:700,color:BRAND.arabica,textTransform:"uppercase",letterSpacing:".06em",marginBottom:7}}>Nadchádzajúce udalosti</div>
 {upcoming.length===0
-?<div style={{textAlign:"center",color:"#A08060",fontSize:12,padding:16,background:"#fff",border:"1px dashed #E0D6C2",borderRadius:10}}>Žiadne naplánované stretnutia. Klikni na deň v kalendári.</div>
+?<div style={{textAlign:"center",color:"#A08060",fontSize:12,padding:16,background:"#fff",border:"1px dashed #E0D6C2",borderRadius:10}}>Žiadne udalosti. Klikni na deň a pridaj udalosť — termíny z Plánu sa zobrazia automaticky.</div>
 :<div style={{display:"flex",flexDirection:"column",gap:6}}>
 {upcoming.slice(0,12).map(m=>(
-<div key={m.id} style={{display:"flex",alignItems:"center",gap:9,background:"#fff",border:"1px solid #E8E0D0",borderRadius:9,padding:"8px 10px"}}>
+<div key={m.id} style={{display:"flex",alignItems:"center",gap:9,background:"#fff",border:"1px solid #E8E0D0",borderLeft:m.fromPlan?`3px solid ${m.color}`:"1px solid #E8E0D0",borderRadius:9,padding:"8px 10px"}}>
 <div style={{textAlign:"center",minWidth:42}}>
 <div style={{fontSize:9,color:"#A08060"}}>{m.date.slice(5).split("-").reverse().join(".")}.</div>
-<div style={{fontSize:12,fontWeight:800,color:MV.neon}}>{m.time||"—"}</div>
+<div style={{fontSize:m.fromPlan?9:12,fontWeight:800,color:m.fromPlan?m.color:MV.neon}}>{m.fromPlan?"PLÁN":(m.time||"—")}</div>
 </div>
 <div style={{flex:1}}>
 <div style={{fontSize:12,fontWeight:600,color:BRAND.espresso}}>{m.title}</div>
-{(m.place||m.note)&&<div style={{fontSize:10,color:"#A08060"}}>{[m.place&&("📍 "+m.place),m.note].filter(Boolean).join(" · ")}</div>}
+{(m.place||m.note)&&<div style={{fontSize:10,color:"#A08060"}}>{[m.place&&(m.fromPlan?m.place:("📍 "+m.place)),m.note].filter(Boolean).join(" · ")}</div>}
 </div>
-<button onClick={()=>rem(m.id)} style={{fontSize:11,color:"#C0B0A0",background:"none",border:"none",cursor:"pointer"}}>✕</button>
+{!m.fromPlan&&<button onClick={()=>rem(m.id)} style={{fontSize:11,color:"#C0B0A0",background:"none",border:"none",cursor:"pointer"}}>✕</button>}
 </div>
 ))}
 </div>}
@@ -639,7 +669,6 @@ return (
 {cols.map(col=><ColDesktop key={col.id} col={col} onUpdate={updCol}/>)}
 </div>
 )}
-<MeetingCalendar/>
 </div>
 );
 }
@@ -3994,6 +4023,9 @@ const TAB_GROUPS = [
 {id:"finance",   icon:"📊", label:"Financie"},
 {id:"pokladna",  icon:"💰", label:"Pokladňa"},
 ]},
+{ group:"Kalendár", tabs:[
+{id:"kalendar",  icon:"📅", label:"Kalendár"},
+]},
 ];
 const TABS = TAB_GROUPS.flatMap(g=>g.tabs);
 const groupOf = id => TAB_GROUPS.find(g=>g.tabs.some(t=>t.id===id))?.group;
@@ -4006,8 +4038,8 @@ const PERM_LEVELS = [
 { k:"edit", l:"Upravovať",    c:"#0F6E56", bg:"#E1F5EE" },
 ];
 const ROLE_TEMPLATES = {
-manager:{ firma:"view", provadzka:"edit", equipment:"edit", eshop:"edit", zamestnanci:"edit", zmeny:"edit", dodav:"edit", sklad:"edit", objednavky:"edit", zavozy:"edit", recepty:"edit", odpad:"edit", plan:"edit", brand:"edit", menu:"edit", finance:"view", pokladna:"edit" },
-staff:{ sklad:"view", objednavky:"edit", zavozy:"view", recepty:"view", odpad:"edit", zmeny:"view", menu:"view", pokladna:"edit", plan:"view" },
+manager:{ firma:"view", provadzka:"edit", equipment:"edit", eshop:"edit", zamestnanci:"edit", zmeny:"edit", dodav:"edit", sklad:"edit", objednavky:"edit", zavozy:"edit", recepty:"edit", odpad:"edit", plan:"edit", brand:"edit", menu:"edit", finance:"view", pokladna:"edit", kalendar:"edit" },
+staff:{ sklad:"view", objednavky:"edit", zavozy:"view", recepty:"view", odpad:"edit", zmeny:"view", menu:"view", pokladna:"edit", plan:"view", kalendar:"view" },
 };
 function templatePerms(role){
 if(role==="admin"){ const o={}; TABS.forEach(t=>o[t.id]="edit"); return o; }
@@ -4286,6 +4318,7 @@ style={{flex:"0 0 auto",minWidth:58,padding:"8px 10px",border:"none",borderBotto
 {tab==="provadzka" && <VenueTab venue={venue} setVenue={setVenue}/>}
 {tab==="equipment" && <EquipmentTab/>}
 {tab==="eshop"    && <EshopTab/>}
+{tab==="kalendar" && <CalendarTab/>}
 {tab==="users"    && <UsersAdminTab/>}
 </div>
 </div>
