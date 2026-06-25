@@ -503,91 +503,98 @@ return out;
 }
 function CalendarTab() {
 const MONTHS=["Január","Február","Marec","Apríl","Máj","Jún","Júl","August","September","Október","November","December"];
+const MON_SHORT=["Jan","Feb","Mar","Apr","Máj","Jún","Júl","Aug","Sep","Okt","Nov","Dec"];
 const DOW=["Po","Ut","St","Št","Pi","So","Ne"];
+const DOW1=["P","U","S","Š","P","S","N"];
 const today=new Date();
-const todayKey=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+const dkOf=dt=>`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
+const dkYMD=(y,m,d)=>`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+const todayKey=dkOf(today);
 const [events,setEvents]=usePersistentState("cp_meetings",[]);
 const planEvents=planEventsFrom(getCached("cp_planCols",COLS0));
 const all=[...events.map(e=>({...e,fromPlan:false})),...planEvents];
-const [view,setView]=useState({y:today.getFullYear(),m:today.getMonth()});
+const byDay=all.reduce((a,m)=>{(a[m.date]=a[m.date]||[]).push(m);return a;},{});
+const sortItems=arr=>[...arr].sort((a,b)=>(a.time||"99").localeCompare(b.time||"99"));
+const [mode,setMode]=useState("month");
+const [cur,setCur]=useState(new Date(today.getFullYear(),today.getMonth(),today.getDate()));
 const [sel,setSel]=useState(null);
 const [form,setForm]=useState({time:"",title:"",place:"",note:""});
 const [gOpen,setGOpen]=useState(false);
-const dk=(y,m,d)=>`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-const daysIn=new Date(view.y,view.m+1,0).getDate();
-const lead=(new Date(view.y,view.m,1).getDay()+6)%7; // pondelok-prvý
-const cells=[...Array(lead).fill(null),...Array.from({length:daysIn},(_,i)=>i+1)];
-const prevM=()=>setView(v=>{const d=new Date(v.y,v.m-1,1);return{y:d.getFullYear(),m:d.getMonth()};});
-const nextM=()=>setView(v=>{const d=new Date(v.y,v.m+1,1);return{y:d.getFullYear(),m:d.getMonth()};});
-const byDay=all.reduce((a,m)=>{(a[m.date]=a[m.date]||[]).push(m);return a;},{});
-const addEvent=()=>{
-if(!sel||!form.title.trim())return;
-setEvents(ms=>[...ms,{id:Date.now()+"-"+Math.random().toString(36).slice(2,6),date:sel,...form,title:form.title.trim()}]);
-setForm({time:"",title:"",place:"",note:""});
-};
+const addEvent=()=>{ const day=(mode==="day"?dkOf(cur):sel)||dkOf(cur); if(!form.title.trim())return; setEvents(ms=>[...ms,{id:Date.now()+"-"+Math.random().toString(36).slice(2,6),date:day,...form,title:form.title.trim()}]); setForm({time:"",title:"",place:"",note:""}); };
 const rem=id=>setEvents(ms=>ms.filter(m=>m.id!==id));
-const upcoming=[...all].sort((a,b)=>(a.date+("T"+(a.time||"99"))).localeCompare(b.date+("T"+(b.time||"99")))).filter(m=>m.date>=todayKey);
-const selList=sel?[...(byDay[sel]||[])].sort((a,b)=>(a.time||"99").localeCompare(b.time||"99")):[];
-const labelDate=s=>{if(!s)return"";const[y,m,d]=s.split("-").map(Number);return `${d}. ${MONTHS[m-1]} ${y}`;};
+const upcoming=[...all].filter(m=>m.date>=todayKey).sort((a,b)=>(a.date+"T"+(a.time||"99")).localeCompare(b.date+"T"+(b.time||"99")));
+const startOfWeek=d=>{const x=new Date(d);x.setDate(x.getDate()-((x.getDay()+6)%7));x.setHours(0,0,0,0);return x;};
+const shift=n=>{const d=new Date(cur);if(mode==="day")d.setDate(d.getDate()+n);else if(mode==="week")d.setDate(d.getDate()+7*n);else if(mode==="month")d.setMonth(d.getMonth()+n);else d.setFullYear(d.getFullYear()+n);setCur(d);};
+const goToday=()=>setCur(new Date(today.getFullYear(),today.getMonth(),today.getDate()));
+const title=mode==="day"?`${DOW[(cur.getDay()+6)%7]} ${cur.getDate()}. ${MONTHS[cur.getMonth()]} ${cur.getFullYear()}`:mode==="week"?(()=>{const s=startOfWeek(cur);const e=new Date(s);e.setDate(s.getDate()+6);return `${s.getDate()}. ${MON_SHORT[s.getMonth()]} – ${e.getDate()}. ${MON_SHORT[e.getMonth()]} ${e.getFullYear()}`;})():mode==="year"?`${cur.getFullYear()}`:`${MONTHS[cur.getMonth()]} ${cur.getFullYear()}`;
 const inp={padding:"8px 9px",borderRadius:7,border:"1px solid #E0D6C2",fontSize:12,background:"#fff",color:BRAND.espresso,outline:"none"};
+const navBtn={background:"#fff",border:"1px solid #E0D6C2",borderRadius:7,padding:"5px 11px",fontSize:14,cursor:"pointer",color:BRAND.espresso};
 const feedToken=(import.meta.env&&import.meta.env.VITE_CALENDAR_TOKEN)||"";
 const feedUrl=(typeof window!=="undefined"?window.location.origin:"")+"/api/calendar"+(feedToken?("?token="+feedToken):"");
+const selDay=mode==="day"?dkOf(cur):sel;
+const selList=selDay?sortItems(byDay[selDay]||[]):[];
+const labelDate=s=>{if(!s)return"";const[y,m,d]=s.split("-").map(Number);return `${d}. ${MONTHS[m-1]} ${y}`;};
+const chip=(it,ix)=>(<span key={ix} title={it.title} style={{fontSize:8,lineHeight:1.25,fontWeight:600,color:"#fff",background:it.fromPlan?it.color:MV.neon,borderRadius:3,padding:"0 3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{it.time?it.time+" ":""}{it.title}</span>);
+const MODES=[["day","Deň"],["week","Týždeň"],["month","Mesiac"],["year","Rok"]];
 return (
 <div style={{padding:"10px 12px 22px"}}>
 <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:12}}>
 <div style={{width:26,height:26,borderRadius:7,background:`linear-gradient(135deg,${MV.neon},${MV.violet})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>📅</div>
 <div>
 <div style={{fontSize:14,fontWeight:800,color:BRAND.espresso}}>Kalendár</div>
-<div style={{fontSize:9.5,color:BRAND.arabica,letterSpacing:".06em"}}>Udalosti a termíny z plánu na jednom mieste</div>
+<div style={{fontSize:9.5,color:BRAND.arabica,letterSpacing:".06em"}}>Deň · týždeň · mesiac · rok — udalosti aj termíny z plánu</div>
 </div>
 </div>
-<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#fff",border:"1px solid #E8E0D0",borderRadius:10,padding:"8px 10px",marginBottom:8}}>
-<button onClick={prevM} style={{background:"none",border:"1px solid #E0D6C2",borderRadius:7,padding:"4px 12px",fontSize:15,cursor:"pointer",color:BRAND.espresso}}>‹</button>
-<div style={{fontSize:13,fontWeight:700,color:BRAND.espresso}}>{MONTHS[view.m]} {view.y}</div>
-<button onClick={nextM} style={{background:"none",border:"1px solid #E0D6C2",borderRadius:7,padding:"4px 12px",fontSize:15,cursor:"pointer",color:BRAND.espresso}}>›</button>
+<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:10}}>
+<button onClick={goToday} style={{padding:"6px 12px",borderRadius:7,border:"1px solid #E0D6C2",background:"#fff",fontSize:12,fontWeight:700,color:BRAND.espresso,cursor:"pointer"}}>Dnes</button>
+<button onClick={()=>shift(-1)} style={navBtn}>‹</button>
+<button onClick={()=>shift(1)} style={navBtn}>›</button>
+<div style={{flex:1,minWidth:120,fontSize:13,fontWeight:800,color:BRAND.espresso,textAlign:"center"}}>{title}</div>
+<div style={{display:"flex",gap:2,background:"#F0E8DA",borderRadius:8,padding:2}}>
+{MODES.map(([k,l])=>(<button key={k} onClick={()=>setMode(k)} style={{padding:"5px 9px",borderRadius:6,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,background:mode===k?MV.neon:"transparent",color:mode===k?"#fff":"#8A7B6E"}}>{l}</button>))}
 </div>
+</div>
+{mode==="month"&&(
 <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
 {DOW.map(d=><div key={d} style={{textAlign:"center",fontSize:9,fontWeight:700,color:"#A08060",textTransform:"uppercase",padding:"2px 0"}}>{d}</div>)}
-{cells.map((d,i)=>{
-if(d===null)return <div key={"e"+i}/>;
-const key=dk(view.y,view.m,d);
-const dayItems=byDay[key]||[];
-const cnt=dayItems.length;
-const hasUser=dayItems.some(x=>!x.fromPlan);
-const dotColor=hasUser?MV.neon:((dayItems[0]&&dayItems[0].color)||MV.neon2);
-const isToday=key===todayKey, isSel=key===sel;
-return (
-<button key={key} onClick={()=>setSel(isSel?null:key)}
-style={{position:"relative",minHeight:52,borderRadius:4,cursor:"pointer",overflow:"hidden",textAlign:"left",
-border:isSel?`2px solid ${MV.neon}`:"1px solid #E8E0D0",
-background:isSel?"rgba(255,106,0,.06)":"#fff",
-display:"flex",flexDirection:"column",gap:1.5,padding:"3px 2px 2px"}}>
-<span style={{alignSelf:"flex-start",fontSize:9.5,fontWeight:700,lineHeight:1,minWidth:15,height:15,display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"50%",color:isToday?"#fff":BRAND.espresso,background:isToday?MV.neon:"transparent"}}>{d}</span>
-{dayItems.slice(0,3).map((it,ix)=>(
-<span key={ix} title={it.title} style={{fontSize:8,lineHeight:1.25,fontWeight:600,color:"#fff",background:it.fromPlan?it.color:MV.neon,borderRadius:3,padding:"0 3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{it.time?it.time+" ":""}{it.title}</span>
-))}
-{cnt>3&&<span style={{fontSize:7.5,color:"#A08060",fontWeight:700,lineHeight:1,paddingLeft:2}}>+{cnt-3}</span>}
-</button>
-);
-})}
-</div>
-{sel&&(
-<div style={{marginTop:12,background:"#fff",border:"1px solid #E8E0D0",borderRadius:10,padding:12}}>
-<div style={{fontSize:12,fontWeight:700,color:BRAND.espresso,marginBottom:8}}>📌 {labelDate(sel)}</div>
-{selList.length>0&&(
-<div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
-{selList.map(m=>(
-<div key={m.id} style={{display:"flex",alignItems:"center",gap:8,background:BRAND.latte,borderRadius:8,padding:"7px 9px",borderLeft:m.fromPlan?`3px solid ${m.color}`:"3px solid transparent"}}>
-<div style={{fontSize:m.fromPlan?9:11,fontWeight:800,color:m.fromPlan?m.color:MV.neon,minWidth:38}}>{m.fromPlan?"PLÁN":(m.time||"—")}</div>
-<div style={{flex:1}}>
-<div style={{fontSize:12,fontWeight:600,color:BRAND.espresso}}>{m.title}</div>
-{(m.place||m.note)&&<div style={{fontSize:10,color:"#A08060"}}>{[m.place&&(m.fromPlan?m.place:("📍 "+m.place)),m.note].filter(Boolean).join(" · ")}</div>}
-</div>
-{!m.fromPlan&&<button onClick={()=>rem(m.id)} style={{fontSize:11,color:"#C0B0A0",background:"none",border:"none",cursor:"pointer"}}>✕</button>}
-</div>
-))}
+{(()=>{const y=cur.getFullYear(),mo=cur.getMonth();const daysIn=new Date(y,mo+1,0).getDate();const lead=(new Date(y,mo,1).getDay()+6)%7;const cells=[...Array(lead).fill(null),...Array.from({length:daysIn},(_,i)=>i+1)];return cells.map((d,i)=>{if(d===null)return <div key={"e"+i}/>;const key=dkYMD(y,mo,d);const items=byDay[key]||[];const isToday=key===todayKey,isSel=key===sel;return (<button key={key} onClick={()=>{setSel(isSel?null:key);setCur(new Date(y,mo,d));}} style={{position:"relative",minHeight:52,borderRadius:4,cursor:"pointer",overflow:"hidden",textAlign:"left",border:isSel?`2px solid ${MV.neon}`:"1px solid #E8E0D0",background:isSel?"rgba(255,106,0,.06)":"#fff",display:"flex",flexDirection:"column",gap:1.5,padding:"3px 2px 2px"}}><span style={{alignSelf:"flex-start",fontSize:9.5,fontWeight:700,lineHeight:1,minWidth:15,height:15,display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"50%",color:isToday?"#fff":BRAND.espresso,background:isToday?MV.neon:"transparent"}}>{d}</span>{sortItems(items).slice(0,3).map(chip)}{items.length>3&&<span style={{fontSize:7.5,color:"#A08060",fontWeight:700,lineHeight:1,paddingLeft:2}}>+{items.length-3}</span>}</button>);});})()}
 </div>
 )}
+{mode==="week"&&(()=>{const s=startOfWeek(cur);const days=Array.from({length:7},(_,i)=>{const d=new Date(s);d.setDate(s.getDate()+i);return d;});return (
+<div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+{days.map((d,i)=>{const key=dkOf(d);const items=sortItems(byDay[key]||[]);const isToday=key===todayKey,isSel=key===sel;return (
+<div key={key} onClick={()=>{setSel(isSel?null:key);setCur(new Date(d));}} style={{cursor:"pointer",border:isSel?`2px solid ${MV.neon}`:"1px solid #E8E0D0",borderRadius:6,background:"#fff",minHeight:130,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+<div style={{textAlign:"center",padding:"4px 2px",borderBottom:"1px solid #F0E8DA",background:isToday?MV.neon:"#FBF7F0"}}>
+<div style={{fontSize:8,fontWeight:700,color:isToday?"#fff":"#A08060",textTransform:"uppercase"}}>{DOW[i]}</div>
+<div style={{fontSize:13,fontWeight:800,color:isToday?"#fff":BRAND.espresso}}>{d.getDate()}</div>
+</div>
+<div style={{display:"flex",flexDirection:"column",gap:2,padding:3}}>{items.slice(0,7).map(chip)}{items.length>7&&<span style={{fontSize:8,color:"#A08060",fontWeight:700}}>+{items.length-7}</span>}</div>
+</div>);})}
+</div>);})()}
+{mode==="year"&&(
+<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10}}>
+{MONTHS.map((mn,mo)=>{const y=cur.getFullYear();const daysIn=new Date(y,mo+1,0).getDate();const lead=(new Date(y,mo,1).getDay()+6)%7;const cells=[...Array(lead).fill(null),...Array.from({length:daysIn},(_,i)=>i+1)];return (
+<div key={mo} style={{border:"1px solid #E8E0D0",borderRadius:8,padding:7,background:"#fff"}}>
+<div onClick={()=>{setCur(new Date(y,mo,1));setMode("month");}} style={{fontSize:11,fontWeight:800,color:MV.neon,marginBottom:5,cursor:"pointer"}}>{mn}</div>
+<div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1}}>
+{DOW1.map((d,i)=><div key={"h"+i} style={{textAlign:"center",fontSize:7,color:"#B0A090"}}>{d}</div>)}
+{cells.map((d,i)=>{if(d===null)return <div key={"e"+i}/>;const key=dkYMD(y,mo,d);const has=(byDay[key]||[]).length>0;const isToday=key===todayKey;return (<div key={key} onClick={()=>{setCur(new Date(y,mo,d));setMode("day");}} style={{textAlign:"center",fontSize:8,cursor:"pointer",borderRadius:"50%",color:isToday?"#fff":BRAND.espresso,background:isToday?MV.neon:has?"rgba(255,106,0,.18)":"transparent",fontWeight:has||isToday?800:400,padding:"1px 0"}}>{d}</div>);})}
+</div>
+</div>);})}
+</div>
+)}
+{selDay&&(
+<div style={{marginTop:12,background:"#fff",border:"1px solid #E8E0D0",borderRadius:10,padding:12}}>
+<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+<div style={{fontSize:12,fontWeight:700,color:BRAND.espresso}}>📌 {labelDate(selDay)}</div>
+{mode!=="day"&&<button onClick={()=>setSel(null)} style={{fontSize:10,color:"#A08060",background:"none",border:"none",cursor:"pointer"}}>zavrieť ✕</button>}
+</div>
+{selList.length>0&&(<div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>{selList.map(m=>(
+<div key={m.id} style={{display:"flex",alignItems:"center",gap:8,background:BRAND.latte,borderRadius:8,padding:"7px 9px",borderLeft:m.fromPlan?`3px solid ${m.color}`:"3px solid transparent"}}>
+<div style={{fontSize:m.fromPlan?9:11,fontWeight:800,color:m.fromPlan?m.color:MV.neon,minWidth:38}}>{m.fromPlan?"PLÁN":(m.time||"—")}</div>
+<div style={{flex:1}}><div style={{fontSize:12,fontWeight:600,color:BRAND.espresso}}>{m.title}</div>{(m.place||m.note)&&<div style={{fontSize:10,color:"#A08060"}}>{[m.place&&(m.fromPlan?m.place:("📍 "+m.place)),m.note].filter(Boolean).join(" · ")}</div>}</div>
+{!m.fromPlan&&<button onClick={()=>rem(m.id)} style={{fontSize:11,color:"#C0B0A0",background:"none",border:"none",cursor:"pointer"}}>✕</button>}
+</div>))}</div>)}
 <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:7,marginBottom:7}}>
 <input style={inp} type="time" value={form.time} onChange={e=>setForm(f=>({...f,time:e.target.value}))}/>
 <input style={inp} placeholder="Názov udalosti" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))}/>
@@ -596,10 +603,7 @@ display:"flex",flexDirection:"column",gap:1.5,padding:"3px 2px 2px"}}>
 <input style={inp} placeholder="Miesto" value={form.place} onChange={e=>setForm(f=>({...f,place:e.target.value}))}/>
 <input style={inp} placeholder="Poznámka" value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))}/>
 </div>
-<button onClick={addEvent} disabled={!form.title.trim()}
-style={{width:"100%",padding:9,borderRadius:8,border:"none",fontWeight:700,fontSize:12,cursor:form.title.trim()?"pointer":"default",opacity:form.title.trim()?1:0.5,color:"#fff",background:`linear-gradient(135deg,${MV.neon},${MV.violet})`}}>
-＋ Pridať udalosť
-</button>
+<button onClick={addEvent} disabled={!form.title.trim()} style={{width:"100%",padding:9,borderRadius:8,border:"none",fontWeight:700,fontSize:12,cursor:form.title.trim()?"pointer":"default",opacity:form.title.trim()?1:0.5,color:"#fff",background:`linear-gradient(135deg,${MV.neon},${MV.violet})`}}>＋ Pridať udalosť</button>
 </div>
 )}
 <div style={{marginTop:14}}>
