@@ -84,19 +84,13 @@ Alebo cez CLI: `npm i -g vercel` → `vercel` → `vercel --prod`.
 - Pozn.: pri súčasnej úprave tej istej položky dvomi ľuďmi platí „posledný zápis vyhráva".
   Nové dáta od kolegov sa načítajú pri ďalšom otvorení/obnovení stránky.
 
-## Lokálne spustenie
+## Napojenie na Google Kalendár
 
-```bash
-npm install
-npm run dev      # http://localhost:5173
-npm run build
-```
+Appka poskytuje **odoberateľný kalendárový feed** (`/api/calendar`) — pridáš ho raz do Google
+Kalendára a všetky udalosti aj termíny z plánu sa tam zobrazia a **samy aktualizujú** (jednosmerne,
+appka → Google; Google obnovuje cca raz za deň).
 
-> AI funkcie a správa používateľov potrebujú serverless funkcie — lokálne ich spustíš cez
-> `vercel dev` (Vercel CLI). Prihlasovanie a databáza fungujú aj v `npm run dev`.
+Postup: v appke otvor **Kalendár → Napojiť na Google Kalendár**, skopíruj adresu, potom v Google
+Kalendári (web) → vľavo pri „Ďalšie kalendáre" klikni **＋ → Z adresy URL** → vlož → **Pridať kalendár**.
 
-## Bezpečnosť
-
-- `service_role` a `ANTHROPIC_API_KEY` sú **len na serveri** (Vercel funkcie). Nikdy nie v klientovi.
-- Používateľ si nemôže sám zmeniť rolu/práva — úpravy profilov povoľuje databáza (RLS) len adminovi.
-- `.env` je v `.gitignore` — necommituj ho.
+Voliteľné zabezpečenie: ak nastavíš env 

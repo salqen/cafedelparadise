@@ -512,6 +512,7 @@ const all=[...events.map(e=>({...e,fromPlan:false})),...planEvents];
 const [view,setView]=useState({y:today.getFullYear(),m:today.getMonth()});
 const [sel,setSel]=useState(null);
 const [form,setForm]=useState({time:"",title:"",place:"",note:""});
+const [gOpen,setGOpen]=useState(false);
 const dk=(y,m,d)=>`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
 const daysIn=new Date(view.y,view.m+1,0).getDate();
 const lead=(new Date(view.y,view.m,1).getDay()+6)%7; // pondelok-prvý
@@ -529,8 +530,10 @@ const upcoming=[...all].sort((a,b)=>(a.date+("T"+(a.time||"99"))).localeCompare(
 const selList=sel?[...(byDay[sel]||[])].sort((a,b)=>(a.time||"99").localeCompare(b.time||"99")):[];
 const labelDate=s=>{if(!s)return"";const[y,m,d]=s.split("-").map(Number);return `${d}. ${MONTHS[m-1]} ${y}`;};
 const inp={padding:"8px 9px",borderRadius:7,border:"1px solid #E0D6C2",fontSize:12,background:"#fff",color:BRAND.espresso,outline:"none"};
+const feedToken=(import.meta.env&&import.meta.env.VITE_CALENDAR_TOKEN)||"";
+const feedUrl=(typeof window!=="undefined"?window.location.origin:"")+"/api/calendar"+(feedToken?("?token="+feedToken):"");
 return (
-<div style={{padding:"14px 16px 28px",borderTop:`1px solid #E8E0D0`}}>
+<div style={{padding:"10px 12px 22px"}}>
 <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:12}}>
 <div style={{width:26,height:26,borderRadius:7,background:`linear-gradient(135deg,${MV.neon},${MV.violet})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>📅</div>
 <div>
@@ -543,7 +546,7 @@ return (
 <div style={{fontSize:13,fontWeight:700,color:BRAND.espresso}}>{MONTHS[view.m]} {view.y}</div>
 <button onClick={nextM} style={{background:"none",border:"1px solid #E0D6C2",borderRadius:7,padding:"4px 12px",fontSize:15,cursor:"pointer",color:BRAND.espresso}}>›</button>
 </div>
-<div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+<div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
 {DOW.map(d=><div key={d} style={{textAlign:"center",fontSize:9,fontWeight:700,color:"#A08060",textTransform:"uppercase",padding:"2px 0"}}>{d}</div>)}
 {cells.map((d,i)=>{
 if(d===null)return <div key={"e"+i}/>;
@@ -555,13 +558,15 @@ const dotColor=hasUser?MV.neon:((dayItems[0]&&dayItems[0].color)||MV.neon2);
 const isToday=key===todayKey, isSel=key===sel;
 return (
 <button key={key} onClick={()=>setSel(isSel?null:key)}
-style={{position:"relative",aspectRatio:"1/1",minHeight:38,borderRadius:8,cursor:"pointer",
-border:isSel?`2px solid ${MV.neon}`:isToday?`1px solid ${MV.neon2}`:"1px solid #ECE4D4",
-background:isSel?"rgba(255,106,0,.12)":cnt>0?"#FBF6EA":"#fff",
-display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,padding:2}}>
-<span style={{fontSize:12,fontWeight:isToday||isSel?800:500,color:isToday?MV.neon:BRAND.espresso}}>{d}</span>
-{cnt>0&&<span style={{position:"absolute",bottom:4,width:5,height:5,borderRadius:99,background:dotColor}}/>}
-{cnt>1&&<span style={{position:"absolute",bottom:4,right:6,fontSize:8,fontWeight:700,color:dotColor}}>{cnt}</span>}
+style={{position:"relative",minHeight:52,borderRadius:4,cursor:"pointer",overflow:"hidden",textAlign:"left",
+border:isSel?`2px solid ${MV.neon}`:"1px solid #E8E0D0",
+background:isSel?"rgba(255,106,0,.06)":"#fff",
+display:"flex",flexDirection:"column",gap:1.5,padding:"3px 2px 2px"}}>
+<span style={{alignSelf:"flex-start",fontSize:9.5,fontWeight:700,lineHeight:1,minWidth:15,height:15,display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"50%",color:isToday?"#fff":BRAND.espresso,background:isToday?MV.neon:"transparent"}}>{d}</span>
+{dayItems.slice(0,3).map((it,ix)=>(
+<span key={ix} title={it.title} style={{fontSize:8,lineHeight:1.25,fontWeight:600,color:"#fff",background:it.fromPlan?it.color:MV.neon,borderRadius:3,padding:"0 3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{it.time?it.time+" ":""}{it.title}</span>
+))}
+{cnt>3&&<span style={{fontSize:7.5,color:"#A08060",fontWeight:700,lineHeight:1,paddingLeft:2}}>+{cnt-3}</span>}
 </button>
 );
 })}
@@ -616,6 +621,23 @@ style={{width:"100%",padding:9,borderRadius:8,border:"none",fontWeight:700,fontS
 </div>
 ))}
 </div>}
+</div>
+<div style={{marginTop:14,borderTop:"1px solid #EFE7DA",paddingTop:12}}>
+<button onClick={()=>setGOpen(o=>!o)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",background:"#fff",border:"1px solid #E8E0D0",borderRadius:9,padding:"9px 11px",cursor:"pointer"}}>
+<span style={{width:20,height:20,borderRadius:5,background:"#1A73E8",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800}}>G</span>
+<span style={{flex:1,textAlign:"left",fontSize:12,fontWeight:700,color:BRAND.espresso}}>Napojiť na Google Kalendár</span>
+<span style={{color:BRAND.arabica,fontSize:12}}>{gOpen?"▲":"▼"}</span>
+</button>
+{gOpen&&(
+<div style={{marginTop:8,background:"#fff",border:"1px solid #E8E0D0",borderRadius:9,padding:11}}>
+<div style={{marginBottom:7,color:BRAND.arabica,fontSize:11,lineHeight:1.6}}>Pridaj túto adresu raz do Google Kalendára — všetky udalosti aj termíny z plánu sa tam budú zobrazovať a samy aktualizovať.</div>
+<div style={{display:"flex",gap:6,marginBottom:9}}>
+<input readOnly value={feedUrl} onFocus={e=>e.target.select()} style={{flex:1,minWidth:0,padding:"7px 8px",borderRadius:7,border:"1px solid #E0D6C2",fontSize:10.5,color:BRAND.espresso,background:"#FBF7F0"}}/>
+<button onClick={()=>{ if(navigator.clipboard) navigator.clipboard.writeText(feedUrl); }} style={{padding:"7px 11px",borderRadius:7,border:"none",background:MV.neon,color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}}>Kopírovať</button>
+</div>
+<div style={{color:BRAND.arabica,fontSize:10.5,lineHeight:1.7}}>Otvor Google Kalendár (web) → vľavo pri <b>„Ďalšie kalendáre"</b> klikni <b>＋</b> → <b>Z adresy URL</b> → vlož adresu → <b>Pridať kalendár</b>. Google ju obnovuje približne raz za deň.</div>
+</div>
+)}
 </div>
 </div>
 );
@@ -4285,42 +4307,4 @@ background:activeGroup===g.group?"rgba(255,106,0,.14)":"none",color:activeGroup=
 </button>
 ))}
 </div>
-{/* Tabs v rámci zvolenej skupiny */}
-<div style={{background:"#fff",borderBottom:"1px solid #ECE3D7",display:"flex",position:"sticky",top:78,zIndex:18,overflowX:"auto"}}>
-{currentGroupTabs.map(t=>(
-<button key={t.id} onClick={()=>setTab(t.id)}
-style={{flex:"0 0 auto",minWidth:58,padding:"8px 10px",border:"none",borderBottom:tab===t.id?`2.5px solid ${BRAND.caramel}`:"2.5px solid transparent",background:tab===t.id?"rgba(255,106,0,.07)":"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,transition:"all .15s"}}>
-<span style={{fontSize:15,filter:tab===t.id?"none":"grayscale(.35) opacity(.85)"}}>{t.icon}</span>
-<span style={{fontSize:9,fontWeight:tab===t.id?700:500,color:tab===t.id?BRAND.caramel:"#A08C7C",whiteSpace:"nowrap"}}>{t.label}</span>
-</button>
-))}
-</div>
-{readOnly&&(
-<div style={{background:"#FEF3C7",color:"#8B6F00",fontSize:11,fontWeight:700,padding:"6px 16px",textAlign:"center",borderBottom:"1px solid #F3E3B0"}}>
-👁 Len na čítanie — túto sekciu nemôžeš upravovať.
-</div>
-)}
-<div style={readOnly?{pointerEvents:"none",userSelect:"none"}:undefined}>
-{tab==="plan"     && <PlanTab/>}
-{tab==="brand"    && <BrandingTab/>}
-{tab==="menu"     && <MenuTab/>}
-{tab==="finance"  && <FinanceTab/>}
-{tab==="pokladna" && <PokladnaTab company={company} sales={sales} setSales={setSales}/>}
-{tab==="dodav"    && <DodavateliaTab inventory={inventory} setInventory={setInventory}/>}
-{tab==="objednavky" && <OrderTab inventory={inventory}/>}
-{tab==="zavozy" && <ZavozyTab/>}
-{tab==="recepty" && <RecipesTab inventory={inventory} recipes={recipes} setRecipes={setRecipes}/>}
-{tab==="odpad" && <WasteTab inventory={inventory} setInventory={setInventory} wasteLog={wasteLog} setWasteLog={setWasteLog}/>}
-{tab==="sklad" && <StockTab inventory={inventory} setInventory={setInventory}/>}
-{tab==="zamestnanci" && <EmployeesTab employees={employees} setEmployees={setEmployees} company={company} setCompany={setCompany} venue={venue}/>}
-{tab==="zmeny" && <ShiftsTab employees={employees} setEmployees={setEmployees}/>}
-{tab==="firma" && <FirmaTab company={company} setCompany={setCompany}/>}
-{tab==="provadzka" && <VenueTab venue={venue} setVenue={setVenue}/>}
-{tab==="equipment" && <EquipmentTab/>}
-{tab==="eshop"    && <EshopTab/>}
-{tab==="kalendar" && <CalendarTab/>}
-{tab==="users"    && <UsersAdminTab/>}
-</div>
-</div>
-);
-}
+{/* Tabs v rámci zvolenej skupiny */
