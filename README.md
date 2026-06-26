@@ -93,4 +93,22 @@ appka → Google; Google obnovuje cca raz za deň).
 Postup: v appke otvor **Kalendár → Napojiť na Google Kalendár**, skopíruj adresu, potom v Google
 Kalendári (web) → vľavo pri „Ďalšie kalendáre" klikni **＋ → Z adresy URL** → vlož → **Pridať kalendár**.
 
-Voliteľné zabezpečenie: ak nastavíš env 
+Voliteľné zabezpečenie: ak nastavíš env premenné `CALENDAR_TOKEN` (server) a `VITE_CALENDAR_TOKEN`
+(klient) na rovnakú náhodnú hodnotu, feed bude prístupný len s tokenom v URL.
+
+## Lokálne spustenie
+
+```bash
+npm install
+npm run dev      # http://localhost:5173
+npm run build
+```
+
+> AI funkcie a správa používateľov potrebujú serverless funkcie — lokálne ich spustíš cez
+> `vercel dev` (Vercel CLI). Prihlasovanie a databáza fungujú aj v `npm run dev`.
+
+## Bezpečnosť
+
+- `service_role` a `ANTHROPIC_API_KEY` sú **len na serveri** (Vercel funkcie). Nikdy nie v klientovi.
+- Používateľ si nemôže sám zmeniť rolu/práva — úpravy profilov povoľuje databáza (RLS) len adminovi.
+- `.env` je v `.gitignore` — necommituj ho.
