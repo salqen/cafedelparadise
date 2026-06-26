@@ -1518,6 +1518,124 @@ if(s<0||e<s) throw new Error("V odpovedi sa nenašlo JSON pole položiek.");
 return JSON.parse(text.slice(s,e+1));
 }
 
+const STOCK_UNITS=["ks","l","kg","fľaša","kartón","bal","balenie","g","ml"];
+function calcMargin(buy,sell){ const b=parseFloat(buy)||0,s=parseFloat(sell)||0; return {eur:Math.round((s-b)*100)/100, pct:b>0?Math.round((s-b)/b*1000)/10:0}; }
+
+function Barcode({value,height=40}){
+const ref=useRef(null);
+useEffect(()=>{
+if(!value||!ref.current)return; let cancelled=false;
+import("jsbarcode").then(m=>{ if(cancelled||!ref.current)return; const JB=m.default||m; const v=String(value); const fmt=/^\d{13}$/.test(v)?"EAN13":/^\d{8}$/.test(v)?"EAN8":"CODE128"; try{ JB(ref.current,v,{format:fmt,height,width:1.5,fontSize:11,margin:4,background:"#ffffff"}); }catch(e){ try{ JB(ref.current,v,{format:"CODE128",height,width:1.5,fontSize:11,margin:4,background:"#ffffff"}); }catch(e2){} } }).catch(()=>{});
+return ()=>{cancelled=true;};
+},[value,height]);
+if(!value)return null;
+return <svg ref={ref} style={{maxWidth:"100%"}}/>;
+}
+
+function BarcodeScanModal({title,onDetected,onClose}){
+const [err,setErr]=useState("");
+const [manual,setManual]=useState("");
+useEffect(()=>{
+let scanner=null, stopped=false;
+import("html5-qrcode").then(({Html5Qrcode})=>{
+if(stopped)return;
+try{ scanner=new Html5Qrcode("bc-reader",{verbose:false}); }catch(e){ setErr("Skener sa nenačítal — použi pole nižšie."); return; }
+scanner.start({facingMode:"environment"},{fps:10,qrbox:{width:240,height:160}},(txt)=>{ if(!stopped){ stopped=true; stop(); onDetected(txt); } },()=>{}).catch(()=>setErr("Kamera sa nespustila — povoľ prístup alebo použi pole nižšie."));
+}).catch(()=>setErr("Skener sa nenačítal — použi pole nižšie."));
+function stop(){ if(scanner){ try{ scanner.stop().then(()=>{try{scanner.clear();}catch(e){}}).catch(()=>{}); }catch(e){} } }
+return ()=>{ stopped=true; stop(); };
+},[]);
+const submitManual=()=>{ if(manual.trim()) onDetected(manual.trim()); };
+return (
+<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+<div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:14,padding:16,width:"100%",maxWidth:360}}>
+<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+<div style={{fontSize:14,fontWeight:800,color:BRAND.espresso}}>{title||"Skenovať kód"}</div>
+<button onClick={onClose} style={{background:"none",border:"none",fontSize:18,cursor:"pointer",color:"#A08060"}}>✕</button>
+</div>
+<div id="bc-reader" style={{width:"100%",borderRadius:10,overflow:"hidden",background:"#000",minHeight:170}}/>
+{err&&<div style={{fontSize:11,color:BRAND.terracotta,marginTop:8}}>{err}</div>}
+<div style={{marginTop:10,fontSize:11,color:BRAND.arabica,marginBottom:5}}>📡 alebo zadaj / naskenuj Bluetooth-USB skenerom:</div>
+<div style={{display:"flex",gap:6}}>
+<input autoFocus value={manual} onChange={e=>setManual(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")submitManual();}} placeholder="EAN / kód" style={{flex:1,padding:"9px 10px",borderRadius:8,border:"1px solid #E0D6C2",fontSize:13,outline:"none"}}/>
+<button onClick={submitManual} style={{padding:"9px 12px",borderRadius:8,border:"none",background:BRAND.olive,color:"#fff",fontWeight:700,cursor:"pointer"}}>OK</button>
+</div>
+</div>
+</div>
+);
+}
+
+function InventoryCount({inventory,setInventory}){
+const [counts,setCounts]=useState({});
+const [scan,setScan]=useState(false);
+const [history,setHistory]=usePersistentState("cp_inventories",[]);
+const [msg,setMsg]=useState("");
+const [showHist,setShowHist]=useState(false);
+const setCount=(scm,v)=>setCounts(c=>({...c,[scm]:v}));
+const onScan=(code)=>{ setScan(false); const it=inventory.find(i=>String(i.ean||"")!==""&&String(i.ean)===String(code)); if(!it){ setMsg("⚠️ Kód "+code+" sa nenašiel v sklade."); return; } setCounts(c=>({...c,[it.scm]:String(Math.round(((parseFloat(c[it.scm])||0)+1)*100)/100)})); setMsg("✓ "+it.name+" +1"); };
+const lines=inventory.map(i=>{ const phys=counts[i.scm]; const has=phys!==undefined&&phys!==""; const diff=has?Math.round((parseFloat(phys)-i.qty)*100)/100:null; return {item:i,phys,has,diff}; });
+const counted=lines.filter(l=>l.has);
+const lossVal=counted.reduce((a,l)=>a+(l.diff<0?Math.abs(l.diff)*(parseFloat(l.item.buyPrice)||0):0),0);
+const surVal=counted.reduce((a,l)=>a+(l.diff>0?l.diff*(parseFloat(l.item.buyPrice)||0):0),0);
+const save=(apply)=>{
+if(counted.length===0){ setMsg("Najprv zadaj aspoň jeden fyzický stav."); return; }
+const rec={id:"inv"+Date.now(),date:todayStr(),count:counted.length,lines:counted.map(l=>({name:l.item.name,unit:l.item.unit,evid:l.item.qty,phys:Math.round(parseFloat(l.phys)*100)/100,diff:l.diff})),lossVal:Math.round(lossVal*100)/100,surVal:Math.round(surVal*100)/100,applied:!!apply};
+setHistory(h=>[rec,...h].slice(0,50));
+if(apply) setInventory(iv=>iv.map(i=>{ const c=counts[i.scm]; return (c!==undefined&&c!=="")?{...i,qty:Math.round(parseFloat(c)*100)/100}:i; }));
+setCounts({}); setMsg(apply?"✓ Inventúra uložená a stav zrovnaný.":"✓ Inventúra uložená (bez zmeny stavu).");
+};
+return (
+<div style={{display:"flex",flexDirection:"column",gap:10}}>
+<div style={{background:"#FBF7F0",border:"1px solid #ECE3D7",borderRadius:10,padding:"10px 12px"}}>
+<div style={{fontSize:12,fontWeight:800,color:BRAND.espresso,marginBottom:3}}>🧾 Inventúra — fyzická kontrola</div>
+<div style={{fontSize:10.5,color:BRAND.arabica,lineHeight:1.5}}>Zadaj alebo naskenuj fyzický stav. Appka porovná s evidenciou a ukáže rozdiely (straty/prebytky).</div>
+</div>
+{msg&&<div style={{fontSize:11.5,color:BRAND.espresso,background:BRAND.crema,borderRadius:8,padding:"7px 10px"}}>{msg}</div>}
+<button onClick={()=>setScan(true)} style={{padding:11,borderRadius:9,border:"none",background:BRAND.adriatic,color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>📷 Skenovať položku (kamera / Bluetooth)</button>
+<div style={{display:"flex",gap:6}}>
+{[["Spočítané",counted.length],["Manko €",lossVal.toFixed(2)],["Prebytok €",surVal.toFixed(2)]].map(([l,v])=>(
+<div key={l} style={{flex:1,background:"#fff",borderRadius:8,border:"1px solid #E8E0D0",padding:"8px",textAlign:"center"}}>
+<div style={{fontSize:15,fontWeight:700,color:l==="Manko €"&&parseFloat(v)>0?BRAND.terracotta:l==="Prebytok €"&&parseFloat(v)>0?BRAND.olive:BRAND.espresso}}>{v}</div>
+<div style={{fontSize:9,color:"#A08060"}}>{l}</div>
+</div>
+))}
+</div>
+<div style={{display:"flex",flexDirection:"column",gap:6}}>
+{inventory.length===0&&<div style={{textAlign:"center",color:BRAND.arabica,fontSize:12,padding:16}}>Sklad je prázdny.</div>}
+{inventory.map(i=>{ const phys=counts[i.scm]; const has=phys!==undefined&&phys!==""; const diff=has?Math.round((parseFloat(phys)-i.qty)*100)/100:null; const dc=diff===null?"#A08060":diff<0?BRAND.terracotta:diff>0?BRAND.olive:"#A08060"; return (
+<div key={i.scm} style={{background:"#fff",border:"1px solid #E8E0D0",borderRadius:9,padding:"9px 11px",display:"flex",alignItems:"center",gap:9}}>
+<div style={{flex:1,minWidth:0}}>
+<div style={{fontSize:12,fontWeight:600,color:BRAND.espresso,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.name}</div>
+<div style={{fontSize:10,color:"#A08060"}}>evid.: <b>{i.qty}</b> {i.unit}{i.ean?" · "+i.ean:""}</div>
+</div>
+<input type="number" step="0.01" value={phys??""} onChange={e=>setCount(i.scm,e.target.value)} placeholder="fyz." style={{width:64,padding:"6px 6px",borderRadius:6,border:"1px solid #E0D6C2",fontSize:14,fontWeight:700,textAlign:"center",outline:"none"}}/>
+<div style={{minWidth:54,textAlign:"right",fontSize:12,fontWeight:800,color:dc}}>{has?(diff>0?"+"+diff:diff):"—"}</div>
+</div>
+);})}
+</div>
+<div style={{display:"flex",gap:6}}>
+<button onClick={()=>save(false)} style={{flex:1,padding:10,borderRadius:8,border:"1px solid #E0D6C2",background:"#fff",color:BRAND.espresso,fontWeight:700,fontSize:12,cursor:"pointer"}}>💾 Uložiť záznam</button>
+<button onClick={()=>save(true)} style={{flex:1,padding:10,borderRadius:8,border:"none",background:BRAND.olive,color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>✓ Uložiť a zrovnať stav</button>
+</div>
+{history.length>0&&<div>
+<button onClick={()=>setShowHist(h=>!h)} style={{width:"100%",padding:"8px",borderRadius:8,border:"1px solid #E8E0D0",background:"#fff",color:BRAND.arabica,fontWeight:700,fontSize:11,cursor:"pointer"}}>{showHist?"Skryť históriu inventúr ▲":"História inventúr ("+history.length+") ▼"}</button>
+{showHist&&<div style={{display:"flex",flexDirection:"column",gap:5,marginTop:6}}>
+{history.map(r=>(
+<div key={r.id} style={{background:"#fff",border:"1px solid #E8E0D0",borderRadius:8,padding:"7px 10px"}}>
+<div style={{display:"flex",justifyContent:"space-between",fontSize:11}}>
+<b style={{color:BRAND.espresso}}>{new Date(r.date).toLocaleDateString("sk")}</b>
+<span style={{color:"#A08060"}}>{r.count} pol. · {r.applied?"zrovnané":"len záznam"}</span>
+</div>
+<div style={{fontSize:10,color:"#A08060",marginTop:2}}>Manko: <b style={{color:BRAND.terracotta}}>{r.lossVal} €</b> · Prebytok: <b style={{color:BRAND.olive}}>{r.surVal} €</b></div>
+</div>
+))}
+</div>}
+</div>}
+{scan&&<BarcodeScanModal title="Skenovať položku do inventúry" onDetected={onScan} onClose={()=>setScan(false)}/>}
+</div>
+);
+}
+
 function StockTab({ inventory, setInventory }) {
 const [catF, setCatF] = useState("Všetko");
 const [supF, setSupF] = useState("all");
@@ -1528,23 +1646,29 @@ const [recvQty, setRecvQty] = useState("");
 const [recvDate, setRecvDate] = useState(todayStr());
 const [recvExpiry, setRecvExpiry] = useState("");
 const [scanOpen, setScanOpen] = useState(false);
+const [eanScanFor, setEanScanFor] = useState(null);
+const [mode, setMode] = useState("stock");
 const cats = ["Všetko",...new Set(inventory.map(i=>i.cat))].sort();
 const alerts = inventory.filter(i=>i.qty<i.minQty);
 const filtered = inventory.filter(i=>{
-const ms=i.name.toLowerCase().includes(search.toLowerCase());
+const ms=i.name.toLowerCase().includes(search.toLowerCase())||String(i.ean||"").includes(search);
 const mc=catF==="Všetko"||i.cat===catF;
 const ms2=supF==="all"||i.sid===supF;
 return ms&&mc&&ms2;
 });
 const upd=(scm,f,v)=>setInventory(iv=>iv.map(i=>i.scm===scm?{...i,[f]:parseFloat(v)||0}:i));
+const updTxt=(scm,f,v)=>setInventory(iv=>iv.map(i=>i.scm===scm?{...i,[f]:v}:i));
 const rem=scm=>setInventory(iv=>iv.filter(i=>i.scm!==scm));
 const addDelivery=(scm,qty,date,expiry)=>{
 const q=parseFloat(qty)||0;if(q<=0)return;
 setInventory(iv=>iv.map(i=>i.scm===scm?{...i,qty:Math.round((i.qty+q)*100)/100,deliveries:[...(i.deliveries||[]),{id:"d"+Date.now(),date:date||todayStr(),qty:q,expiry:expiry||""}]}:i));
 setReceivingFor(null);setRecvQty("");setRecvExpiry("");setRecvDate(todayStr());
 };
+const modeBtn=(k,l)=>(<button onClick={()=>setMode(k)} style={{flex:1,padding:"9px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12.5,fontWeight:700,background:mode===k?BRAND.espresso:BRAND.crema,color:mode===k?"#fff":BRAND.arabica}}>{l}</button>);
 return (
 <div style={{padding:14,display:"flex",flexDirection:"column",gap:10}}>
+<div style={{display:"flex",gap:6}}>{modeBtn("stock","📦 Sklad")}{modeBtn("inventory","🧾 Inventúra")}</div>
+{mode==="inventory"?<InventoryCount inventory={inventory} setInventory={setInventory}/>:<>
 {alerts.length>0&&(
 <div style={{background:"#FEE2E2",border:"1px solid #FCA5A5",borderRadius:10,padding:"10px 14px"}}>
 <div style={{fontSize:12,fontWeight:700,color:BRAND.terracotta,marginBottom:5}}>⚠️ Nízke zásoby ({alerts.length})</div>
@@ -1567,7 +1691,7 @@ background:supF===id?BRAND.espresso:BRAND.crema,color:supF===id?"#fff":BRAND.ara
 ))}
 </div>
 <div style={{display:"flex",gap:6}}>
-<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Hľadaj…"
+<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Hľadaj (názov / EAN)…"
 style={{flex:1,padding:"7px 10px",borderRadius:7,border:"1px solid #E8E0D0",background:"#fff",fontSize:12,outline:"none"}}/>
 <select value={catF} onChange={e=>setCatF(e.target.value)}
 style={{padding:"7px 8px",borderRadius:7,border:"1px solid #E8E0D0",background:"#fff",fontSize:12}}>
@@ -1592,15 +1716,21 @@ const pct=item.minQty>0?Math.min(100,Math.round((item.qty/item.minQty)*100)):100
 const bc=pct<50?BRAND.terracotta:pct<80?"#F59E0B":BRAND.olive;
 const isE=editing===item.scm;
 const supInfo=SUPS[item.sid];
+const mg=calcMargin(item.buyPrice,item.sellPrice);
 return(
 <div key={item.scm} style={{background:"#fff",borderRadius:10,border:"1px solid #E8E0D0",padding:"12px 14px",borderLeft:`4px solid ${low?BRAND.terracotta:BRAND.olive}`}}>
 <div style={{display:"flex",alignItems:"flex-start",gap:8,marginBottom:8}}>
 <div style={{flex:1}}>
 <div style={{fontSize:12,fontWeight:600,color:BRAND.espresso}}>{item.name}</div>
 <div style={{fontSize:10,color:"#A08060",marginTop:2}}>
-{item.cat} · {item.boxQty} {item.unit}/bal.
+{item.cat} · {item.boxQty} {item.unit}/bal.{item.ean?" · "+item.ean:""}
 {supInfo&&<span style={{marginLeft:6,padding:"1px 5px",borderRadius:4,background:supInfo.color+"20",color:supInfo.color,fontWeight:700,fontSize:9}}>{supInfo.icon} {supInfo.name}</span>}
 </div>
+{(item.buyPrice||item.sellPrice)&&<div style={{fontSize:10,marginTop:3,display:"flex",gap:8,flexWrap:"wrap"}}>
+{item.buyPrice?<span style={{color:"#A08060"}}>Nákup: {Number(item.buyPrice).toFixed(2)} €</span>:null}
+{item.sellPrice?<span style={{color:BRAND.espresso,fontWeight:700}}>Predaj: {Number(item.sellPrice).toFixed(2)} €</span>:null}
+{(parseFloat(item.buyPrice)&&parseFloat(item.sellPrice))?<span style={{color:mg.eur>=0?BRAND.olive:BRAND.terracotta,fontWeight:700}}>marža {mg.pct.toFixed(0)} %</span>:null}
+</div>}
 </div>
 <div style={{display:"flex",gap:4}}>
 <button onClick={()=>{setReceivingFor(receivingFor===item.scm?null:item.scm);setRecvQty("");setRecvExpiry("");setRecvDate(todayStr());}}
@@ -1621,7 +1751,7 @@ style={{padding:"3px 8px",borderRadius:5,border:"none",cursor:"pointer",fontSize
 {isE
 ?<input type="number" defaultValue={item.qty} step="0.5" min="0"
 onChange={e=>upd(item.scm,"qty",e.target.value)}
-style={{width:"100%",padding:"4px 6px",borderRadius:5,border:"1px solid #E8D0A0",fontSize:16,fontWeight:700,textAlign:"center"}}/>
+style={{width:"100%",boxSizing:"border-box",padding:"4px 6px",borderRadius:5,border:"1px solid #E8D0A0",fontSize:16,fontWeight:700,textAlign:"center"}}/>
 :<div style={{fontSize:22,fontWeight:700,color:low?BRAND.terracotta:BRAND.olive,lineHeight:1}}>
 {item.qty} <span style={{fontSize:11,fontWeight:400,color:"#A08060"}}>{item.unit}</span>
 </div>
@@ -1632,27 +1762,49 @@ style={{width:"100%",padding:"4px 6px",borderRadius:5,border:"1px solid #E8D0A0"
 <div style={{display:"flex",alignItems:"center",gap:4}}>
 <input type="number" value={item.minQty} step="1" min="0"
 onChange={e=>upd(item.scm,"minQty",e.target.value)}
-style={{flex:1,padding:"4px 6px",borderRadius:5,border:"1px solid #E8D0A0",fontSize:16,fontWeight:700,textAlign:"center"}}/>
+style={{flex:1,minWidth:0,padding:"4px 6px",borderRadius:5,border:"1px solid #E8D0A0",fontSize:16,fontWeight:700,textAlign:"center"}}/>
 <span style={{fontSize:11,color:"#A08060"}}>{item.unit}</span>
 </div>
 </div>
 </div>
+{isE&&(
+<div style={{background:"#FBF7F0",borderRadius:8,padding:10,marginBottom:8,display:"flex",flexDirection:"column",gap:8,border:"1px solid #ECE3D7"}}>
+<div style={{display:"flex",gap:6,alignItems:"center"}}>
+<span style={{fontSize:10,color:"#A08060",width:60}}>EAN / kód</span>
+<input value={item.ean||""} onChange={e=>updTxt(item.scm,"ean",e.target.value)} placeholder="čiarový kód" style={{flex:1,minWidth:0,padding:"6px 8px",borderRadius:6,border:"1px solid #E0D6C2",fontSize:12,outline:"none"}}/>
+<button onClick={()=>setEanScanFor(item.scm)} style={{padding:"6px 9px",borderRadius:6,border:"none",background:BRAND.adriatic,color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>📷 Skenovať</button>
+</div>
+<div style={{display:"flex",gap:6,alignItems:"center"}}>
+<span style={{fontSize:10,color:"#A08060",width:60}}>Jednotka</span>
+<select value={item.unit||"ks"} onChange={e=>updTxt(item.scm,"unit",e.target.value)} style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid #E0D6C2",fontSize:12}}>{STOCK_UNITS.map(u=><option key={u}>{u}</option>)}</select>
+</div>
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+<div><div style={{fontSize:10,color:"#A08060",marginBottom:2}}>Nákupná cena €</div><input type="number" step="0.01" min="0" value={item.buyPrice??""} onChange={e=>updTxt(item.scm,"buyPrice",e.target.value)} style={{width:"100%",boxSizing:"border-box",padding:"6px 8px",borderRadius:6,border:"1px solid #E0D6C2",fontSize:13,outline:"none"}}/></div>
+<div><div style={{fontSize:10,color:"#A08060",marginBottom:2}}>Predajná cena €</div><input type="number" step="0.01" min="0" value={item.sellPrice??""} onChange={e=>updTxt(item.scm,"sellPrice",e.target.value)} style={{width:"100%",boxSizing:"border-box",padding:"6px 8px",borderRadius:6,border:"1px solid #E0D6C2",fontSize:13,outline:"none"}}/></div>
+</div>
+{(parseFloat(item.buyPrice)||parseFloat(item.sellPrice))?<div style={{fontSize:11.5,fontWeight:800,color:mg.eur>=0?BRAND.olive:BRAND.terracotta}}>Marža: {mg.eur.toFixed(2)} € · {mg.pct.toFixed(1)} %</div>:null}
+{item.ean&&<div style={{display:"flex",gap:12,alignItems:"center",background:"#fff",borderRadius:8,padding:10,flexWrap:"wrap",justifyContent:"center"}}>
+<div style={{textAlign:"center"}}><Barcode value={item.ean}/><div style={{fontSize:8,color:"#A08060"}}>čiarový kód</div></div>
+<div style={{textAlign:"center"}}><img src={qrImgUrl(item.ean,96)} alt="QR" width="96" height="96" style={{borderRadius:4}}/><div style={{fontSize:8,color:"#A08060"}}>QR kód</div></div>
+</div>}
+</div>
+)}
 {receivingFor===item.scm&&(
 <div style={{background:"#EAF2F8",borderRadius:8,padding:10,marginBottom:8,display:"flex",flexDirection:"column",gap:6}}>
 <div style={{fontSize:10,color:BRAND.adriatic,fontWeight:700}}>📥 Príjem tovaru — pridať k zásobe</div>
 <div style={{display:"flex",gap:6}}>
 <input type="number" value={recvQty} onChange={e=>setRecvQty(e.target.value)} placeholder={`+ ks (${item.unit})`} step="0.5" min="0"
-style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid #93C5FD",fontSize:12,outline:"none"}}/>
+style={{flex:1,minWidth:0,padding:"6px 8px",borderRadius:6,border:"1px solid #93C5FD",fontSize:12,outline:"none"}}/>
 </div>
 <div style={{display:"flex",gap:6,alignItems:"center"}}>
 <span style={{fontSize:10,color:"#5B7A99",flexShrink:0,width:70}}>Dodané:</span>
 <input type="date" value={recvDate} onChange={e=>setRecvDate(e.target.value)}
-style={{flex:1,padding:"5px 7px",borderRadius:6,border:"1px solid #93C5FD",fontSize:11,outline:"none"}}/>
+style={{flex:1,minWidth:0,padding:"5px 7px",borderRadius:6,border:"1px solid #93C5FD",fontSize:11,outline:"none"}}/>
 </div>
 <div style={{display:"flex",gap:6,alignItems:"center"}}>
 <span style={{fontSize:10,color:"#5B7A99",flexShrink:0,width:70}}>Spotreba do:</span>
 <input type="date" value={recvExpiry} onChange={e=>setRecvExpiry(e.target.value)}
-style={{flex:1,padding:"5px 7px",borderRadius:6,border:"1px solid #93C5FD",fontSize:11,outline:"none"}}/>
+style={{flex:1,minWidth:0,padding:"5px 7px",borderRadius:6,border:"1px solid #93C5FD",fontSize:11,outline:"none"}}/>
 </div>
 <button onClick={()=>addDelivery(item.scm,recvQty,recvDate,recvExpiry)} disabled={!recvQty}
 style={{padding:8,borderRadius:7,border:"none",background:BRAND.olive,color:"#fff",fontWeight:700,fontSize:12,cursor:recvQty?"pointer":"default",opacity:recvQty?1:0.5}}>
@@ -1682,7 +1834,9 @@ return(
 })}
 </div>
 </>}
+</>}
 {scanOpen&&<ScanDeliveryModal inventory={inventory} setInventory={setInventory} onClose={()=>setScanOpen(false)}/>}
+{eanScanFor&&<BarcodeScanModal title="Naskenuj EAN položky" onDetected={code=>{updTxt(eanScanFor,"ean",code);setEanScanFor(null);}} onClose={()=>setEanScanFor(null)}/>}
 </div>
 );
 }
